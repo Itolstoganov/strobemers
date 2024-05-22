@@ -287,6 +287,101 @@ def randstrobes(seq: str, k_size: int, strobe_w_min_offset: int,
     )}
     return randstrobes
 
+def multi_context(seq: str, k_size: int, strobe_w_min_offset: int,
+                  strobe_w_max_offset: int, w: int, order: int = 2) -> dict:
+    """
+    Strobemer seeding protocol to sample multi-context seeds
+
+    :param seq: a string with a nucleotide sequence
+    :param k_size: length of all strobes (len(strobe_1) +  ... + len(strobe_n))
+    :param strobe_w_min_offset: minimum window offset to the previous window (wMin > 0)
+    :param strobe_w_max_offset: maximum window offset to the previous window (wMin <= wMax)
+    :param w: number of hashes used in a sliding window for thinning (w=1 means no thinning)
+    :param order: number of substrings/strobes
+    :param return_min_value: a bool to specify whether the hash value we minimize in the function deciding how to pick the strobe should be returned
+    :returns: a dictionary with positions along the string as keys and the tuples containing partial and full hash as value
+    """
+    randstrobes = dict()
+    randstrobes_hash = dict()
+    prime = 997
+    assert strobe_w_min_offset > 0, "Minimum strobemer offset has to be greater than 0 in this implementation"
+
+    if k_size % order != 0:
+        print("WARNING: kmer size is not evenly divisible with {0}, will use {1} as kmer size: ".format(order, k_size - k_size % order))
+        k_size = k_size - k_size % order
+    m_size = k_size//order
+
+    randstrobes = {tuple(index): h for index, h in seq_to_multi_context_iter(
+        seq, m_size, strobe_w_min_offset, strobe_w_max_offset, prime, w, order
+    )}
+    return randstrobes
+
+
+def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
+                              strobe_w_max_offset: int, prime: int, w: int,
+                              order: int) -> Iterator[tuple]:
+    """
+    Iterator for creation of randstrobes of any order
+
+    :param seq: a string with a nucleotide sequence
+    :param k_size: length of each strobe
+    :param strobe_w_min_offset: minimum window offset to the previous window (wMin > 0)
+    :param strobe_w_max_offset: maximum window offset to the previous window (wMin <= wMax)
+    :param prime: prime number (q) in minimizing h(m)+h(mj) mod q
+    :param w: number of hashes used in a sliding window for thinning (w=1 means no thinning)
+    :param order: number of substrings/strobes
+    :returns: an iterator for creating multi context seeds
+    """
+    hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+    # thinning
+    if w > 1:
+        # produce a subset of positions, still with same index as in full sequence
+        hash_seq_list_thinned = thinner([h for i, h in hash_seq_list], w)
+    else:
+        hash_seq_list_thinned = hash_seq_list
+
+    for (p1, hash_m1) in hash_seq_list_thinned:  # [:-k_size]:
+        if p1 >= len(hash_seq_list) - (order-1)*k_size:
+            break
+        # hash_m1 = hash_seq_list[p]
+
+        if p1 + (order-1) * strobe_w_max_offset <= len(hash_seq_list):
+            windows = list()
+            for window_order in range(1, order):
+                start = p1 + strobe_w_min_offset + (window_order-1) * strobe_w_max_offset
+                end = min(p1 + window_order * strobe_w_max_offset, len(hash_seq_list))
+                windows.append((start, end))
+
+        else:
+            windows = list()
+            for window_order in range(1, order):
+                start = (max(
+                    p1+window_order*k_size,
+                    len(hash_seq_list) + strobe_w_min_offset - (order - window_order) * strobe_w_max_offset
+                    )
+                )
+
+                end = min(p1 + window_order * strobe_w_max_offset, len(hash_seq_list))
+                windows.append((start, end))
+
+        index = [p1, ]
+        min_values = []
+        min_hash_val = hash_m1
+        partial_hash_val = hash_m1
+        for index_order in range(1, order):
+            min_index, min_value = argmin([
+                (min_hash_val + hash_seq_list[i][1]) % prime
+                for i in range(*windows[index_order-1])
+            ])
+
+            min_hash_val = min_hash_val + (index_order * (-1)**index_order) * hash_seq_list[windows[index_order-1][0] + min_index][1]
+            if index_order < order - 1:
+                partial_hash_val = min_hash_val
+
+            index.append(min_index+windows[index_order-1][0])
+
+        yield index, (partial_hash_val, min_hash_val)
+
 
 def randstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
                      strobe_w_max_offset: int, w: int, order: int = 2,
