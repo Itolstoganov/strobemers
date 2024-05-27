@@ -19,7 +19,7 @@ from typing import Iterator
 from modules import indexing_Maier, help_functions
 
 
-def get_match_coverage(seq_len, mers, matches, order, span, partial_matches=set()):
+def get_match_coverage(seq_len, mers, matches, order, span, partial_matches=dict()):
     """
         Span is k if kmer, length between first and last position if spaced kmer,
         and span between the start of the first strobe and the last nucleotide of the last strobe.
@@ -31,10 +31,11 @@ def get_match_coverage(seq_len, mers, matches, order, span, partial_matches=set(
         match_list = sorted([ (p, p+span) for (p, h) in mers.items() if h in matches ])
     elif order == 2:
         match_list = [ (p1,p2+span) for ((p1,p2), h) in mers.items() if h in matches ]
-        match_list += [ (p1,p1 + span) for ((p1,_), h) in mers.items() if h in partial_matches ]
+        match_list += [ (p1,p1 + span) for ((p1,_), h) in mers.items() if h in partial_matches[0]]
     elif order == 3:
         match_list = [ (p1, p3+span) for ((p1,p2, p3), h) in mers.items() if h in matches ]
-        match_list += [(p1, p2 + span) for ((p1, p2, _), h) in mers.items() if h in partial_matches]
+        match_list += [(p1, p2 + span) for ((p1, p2, _), h) in mers.items() if h in partial_matches[1]]
+        match_list += [(p1, p1 + span) for ((p1, _, _), h) in mers.items() if h in partial_matches[0]]
 
     match_list = sorted(match_list)
 
@@ -75,8 +76,7 @@ def seq_covered_spaced_kmers(mers, matches, seq, positions):
     return c
 
 
-def get_sequence_coverage(mers, matches, order, k_len, partial_matches=set()):
-
+def get_sequence_coverage(mers, matches, order, k_len, partial_matches=dict()):
     covered_bases = 0
     if not matches:
         return covered_bases
@@ -85,12 +85,13 @@ def get_sequence_coverage(mers, matches, order, k_len, partial_matches=set()):
         all_pos_vector = sorted([p for (p, k) in mers.items() if k in matches ])
     elif order == 2:
         match_list = [ [p1,p2] for ((p1,p2), k) in mers.items() if k in matches ]
-        match_list += [ [p1] for ((p1,_), k) in mers.items() if k in partial_matches]
+        match_list += [ [p1] for ((p1,_), k) in mers.items() if k in partial_matches[0]]
         all_pos_vector = sorted([p for sublist in match_list for p in sublist])
 
     elif order == 3:
         match_list = [ [p1,p2, p3] for ((p1,p2, p3), k) in mers.items() if k in matches ]
-        match_list += [[p1, p2] for ((p1, p2, _), k) in mers.items() if k in partial_matches]
+        match_list += [[p1, p2] for ((p1, p2, _), k) in mers.items() if k in partial_matches[1]]
+        match_list += [ [p1] for ((p1, _, _), k) in mers.items() if k in partial_matches[0]]
         all_pos_vector = sorted([p for sublist in match_list for p in sublist])
 
 
@@ -111,7 +112,7 @@ def get_sequence_coverage(mers, matches, order, k_len, partial_matches=set()):
 
 
 
-def get_intervals(mers, matches, order, partial_matches=set()):
+def get_intervals(mers, matches, order, partial_matches=dict()):
     if not matches:
         return [], []
 
@@ -120,15 +121,16 @@ def get_intervals(mers, matches, order, partial_matches=set()):
     elif order == 2:
         # match_list = [ [p1,p2] for ((p1,p2), k) in mers.items() if k in matches ]
         # all_pos_vector = sorted([p for sublist in match_list for p in sublist])
-        match_list = [ [p for p in range(p1, p2+1)] for ((p1, p2), k) in mers.items() if k in matches]
-        match_list += [ [p for ((p, _), k) in mers.items() if k in partial_matches]]
+        match_list = [[p for p in range(p1, p2+1)] for ((p1, p2), k) in mers.items() if k in matches]
+        match_list += [[p for ((p, _), k) in mers.items() if k in partial_matches[0]]]
         all_pos_vector = sorted(set([p for sublist in match_list for p in sublist]))
 
     elif order == 3:
         # match_list = [ [p1,p2, p3] for ((p1,p2, p3), k) in mers.items() if k in matches ]
         # all_pos_vector = sorted([p for sublist in match_list for p in sublist])
-        match_list = [ [p for p in range(p1, p3+1)] for ((p1, p2, p3), k) in mers.items() if k in matches]
-        match_list += [[p for p in range(p1, p2 + 1)] for ((p1, p2, p3), k) in mers.items() if k in partial_matches]
+        match_list =  [[p for p in range(p1, p3 + 1)] for ((p1, p2, p3), k) in mers.items() if k in matches]
+        match_list += [[p for p in range(p1, p2 + 1)] for ((p1, p2, _), k) in mers.items() if k in partial_matches[1]]
+        match_list += [[p for ((p, _, _), k) in mers.items() if k in partial_matches[0]]]
         all_pos_vector = sorted(set([p for sublist in match_list for p in sublist]))
 
     # ivls = []
@@ -201,34 +203,51 @@ def statistics(ivls, seq, k):
     return nr_islands, gap_lengths, seq_covered
 
 
-def multi_context_lookup(query_mer: tuple, ref_partials: Counter, ref_fulls: Counter) -> tuple | None:
+def multi_context_lookup(query_mer: tuple, order_to_ref_seeds: dict) -> tuple | None:
     """
     Multi context query seed lookup
     :param query_mer: tuple containing (<partial hash>, <full hash>) of the multi-context seed
-    :param ref_partials: Counter object with the distribution of number of partial hashes in the reference seeds
-    :param ref_fulls: Counter object with the distribution of number of full hashes in the reference seeds
+    :param order_to_ref_seeds: dictionary from the search level to reference hash values
     :returns: in case of a full match: tuple (None, <full hash>, <number of hits in reference>)
-              in case of a partial match: tuple (<partial hash>, None, <number of hits in reference>)
+              in case of a match: tuple (<search level>, <partial hash>, <number of hits in reference>)
               in case of no match: None
     """
-    partial_value, full_value = query_mer
-    if full_value in ref_fulls:
-        return None, full_value, ref_fulls[full_value]
-    elif partial_value in ref_partials:
-        return partial_value, None, ref_partials[partial_value]
-    else:
-        return None
+    query_values = query_mer
+    # print(query_mer)
+    order = len(query_values)
+    for search_level in range(order - 1, -1, -1):
+        query_value = query_values[search_level]
+        if query_value in order_to_ref_seeds[search_level]:
+            return search_level, query_value, order_to_ref_seeds[search_level]
+    return None
 
-def get_multi_context_matches(ref_mers: Iterator[tuple], query_mers: Iterator[tuple]) -> list:
-    ref_partials = Counter([mer[0] for mer in ref_mers])
-    ref_fulls = Counter([mer[1] for mer in ref_mers])
-    lookup_results = [multi_context_lookup(q, ref_partials, ref_fulls) for q in query_mers]
-    partial_hits = {lookup_result[0] for lookup_result in lookup_results if lookup_result and lookup_result[0]}
-    full_hits = {lookup_result[1] for lookup_result in lookup_results if lookup_result and lookup_result[1]}
-    partial_matches = [ref_mer for ref_mer in ref_mers if ref_mer[0] in partial_hits]
-    full_matches = [ref_mer for ref_mer in ref_mers if ref_mer[1] in full_hits]
-    total_num_matches = len(set([pos for (pos, val) in partial_matches]) | set([pos for (pos, val) in full_matches]))
-    return full_matches, partial_matches, total_num_matches
+def get_multi_context_matches(ref_mers: Iterator[tuple], query_mers: Iterator[tuple], order: int):
+    order_to_ref_seeds = dict()
+    for i in range(order):
+        order_to_ref_seeds[i] = Counter([mer[i] for mer in ref_mers])
+    lookup_results = [multi_context_lookup(q, order_to_ref_seeds) for q in query_mers]
+    full_hits = set()
+    partial_hits = dict()
+    for i in range(order - 1):
+        partial_hits[i] = set()
+    for lookup_result in lookup_results:
+        if lookup_result:
+            if lookup_result[0] == order - 1:
+                full_hits.add(lookup_result[1])
+            else:
+                partial_hits[lookup_result[0]].add(lookup_result[1])
+    # partial_hits = {lookup_result[0]: for lookup_result in lookup_results if lookup_result and lookup_result[0]}
+    # full_hits = {lookup_result[1] for lookup_result in lookup_results if lookup_result and lookup_result[0] == order}
+
+    partial_matches = dict()
+    covered_ref_mers = set()
+
+    for level, hits in partial_hits.items():
+        partial_matches[level] = [ref_mer for ref_mer in ref_mers if ref_mer[level] in hits]
+        covered_ref_mers |= set(partial_matches[level])
+    full_matches = [ref_mer for ref_mer in ref_mers if ref_mer[order - 1] in full_hits]
+    covered_ref_mers |= set(full_matches)
+    return full_matches, partial_matches, len(covered_ref_mers)
 
 def analyze_strobemers(seq1, seq2, k_size, order, hash_fcn, w, w_low = 0, w_high = 50):
     # minstrobes
@@ -284,11 +303,13 @@ def analyze_strobemers(seq1, seq2, k_size, order, hash_fcn, w, w_low = 0, w_high
     #     #     strobemers2 = indexing_Maier.minstrobes(seq2, k_size, order = 3, w_1 = w_1, w_2 = w_2 )
     # print(hash_fcn, order, len(strobemers2))
     full_matches = set(strobemers1.values()) & set(strobemers2.values())
-    partial_matches = set()
+    partial_matches = dict()
+    for i in range(order - 1):
+        partial_matches[i] = set()
     m = len(full_matches)
     mp = len(strobemers1.values())
     if hash_fcn == "multi-context":
-        full_matches, partial_matches, m = get_multi_context_matches(strobemers1.values(), strobemers2.values())
+        full_matches, partial_matches, m = get_multi_context_matches(strobemers1.values(), strobemers2.values(), order)
     ivls, all_pos_vector = get_intervals(strobemers1, full_matches, order, partial_matches)
     nr_islands, gap_lengths, c = statistics(ivls, seq1, k_size//order)
     seq_cov = get_sequence_coverage(strobemers1, full_matches, order, k_size//order, partial_matches)
@@ -549,10 +570,10 @@ def print_combined_table(combined_results, mut_freqs, metrics_list, protocols):
 
 
 def main(args):
-    # L = 200
     L = 10000
+    # L = 10000
     k_size = 30
-    nr_exp = 50
+    nr_exp = 100
     w = 1 # thinning, w = 1  means no thinning. w =1, 10, 20 was used in the evaluations.
     mut_freqs = [0.01, 0.05, 0.1] #[0.1]
     # mut_freqs = [0.1]
@@ -588,7 +609,7 @@ def main(args):
                                         (3,10,w_3low,w_3high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0 }}
                    }
         for exp_id in range(nr_exp):
-            if exp_id % (nr_exp / 10) == 0:
+            if exp_id % (nr_exp / 50) == 0:
                 print("Performing iteration {} out of {}".format(exp_id, nr_exp))
 
             seq1 = "".join([random.choice("ACGT") for i in range(L)])

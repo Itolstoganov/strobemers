@@ -6,6 +6,7 @@ import random
 import copy
 from collections import defaultdict, deque
 from fractions import Fraction
+from modules import help_functions
 from typing import Iterator
 
 BITS = sys.hash_info.width
@@ -333,6 +334,7 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
     :returns: an iterator for creating multi context seeds
     """
     hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+    # hash_seq_list = [(i, min(hash(seq[i:i + k_size]), hash())) for i in range(len(seq) - k_size + 1)]
     # thinning
     if w > 1:
         # produce a subset of positions, still with same index as in full sequence
@@ -368,6 +370,8 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
         min_values = []
         min_hash_val = hash_m1
         partial_hash_val = hash_m1
+        raw_hash_values = [hash_m1 % ((MAX + 1) * 2)]
+        hash_values = [hash_m1]
         for index_order in range(1, order):
             min_index, min_value = argmin([
                 (min_hash_val + hash_seq_list[i][1]) % prime
@@ -375,12 +379,28 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
             ])
 
             min_hash_val = min_hash_val + (index_order * (-1)**index_order) * hash_seq_list[windows[index_order-1][0] + min_index][1]
-            if index_order < order - 1:
-                partial_hash_val = min_hash_val
 
             index.append(min_index+windows[index_order-1][0])
+            raw_hash_values.append(hash_seq_list[windows[index_order-1][0] + min_index][1] % ((MAX + 1) * 2))
+            # hash_values.append(min_hash_val)
 
-        yield index, (partial_hash_val, min_hash_val)
+        main_hash_len = 40
+        aux_hash_len = 64 - main_hash_len
+        digest_len = (64 - main_hash_len) // (order - 1)
+        hash_values = [raw_hash_values[0] >> aux_hash_len << aux_hash_len]
+        curr_prefix_len = main_hash_len
+        for i in range(1, order):
+            curr_hash_prefix = hash_values[-1]
+            #Concatenate prefix of the ith hash to the hash string
+            digest = raw_hash_values[i] >> (64 - digest_len)
+            digest = digest << (64 - curr_prefix_len - digest_len)
+            hash_values.append(curr_hash_prefix | digest)
+            # print("{:064b}".format(curr_hash_prefix))
+            # print("{:064b}".format(digest))
+            # print("{:064b}".format(hash_values[-1]))
+            assert(hash_values[-1] >> (64 - curr_prefix_len) == curr_hash_prefix >> (64 - curr_prefix_len))
+
+        yield index, tuple(hash_values)
 
 
 def randstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
