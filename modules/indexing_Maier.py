@@ -72,6 +72,9 @@ def thinner(hash_list: list, w: int) -> list:
     return thinned_hash_list
 
 
+def canonical_hash(string):
+    return min(hash(string), hash(help_functions.reverse_complement(string)))
+
 def kmers(seq: str, k_size: int, w: int) -> dict:
     """
     Sample a substrings of length k contained within a given sequence
@@ -82,12 +85,12 @@ def kmers(seq: str, k_size: int, w: int) -> dict:
     :returns: a dictionary with positions along the string as keys and the kmers as value
     """
     if w > 1:
-        hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+        hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
         # produce a subset of positions, still with same index as in full sequence
         hash_seq_list_thinned = thinner([h for i, h in hash_seq_list], w)
         kmers_pos = {i: h for i, h in hash_seq_list_thinned}
     else:
-        kmers_pos = {i: hash(seq[i:i+k_size]) for i in range(len(seq) - k_size + 1)}
+        kmers_pos = {i: canonical_hash(seq[i:i+k_size]) for i in range(len(seq) - k_size + 1)}
 
     return kmers_pos
 
@@ -102,13 +105,13 @@ def kmer_iter(seq: str, k_size: int, w: int) -> Iterator[tuple]:
     :returns: an iterator for creating kmers
     """
     if w > 1:
-        hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+        hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
         # produce a subset of positions, still with samme index as in full sequence
         hash_seq_list_thinned = thinner([h for i, h in hash_seq_list], w)
         for p, h in hash_seq_list_thinned:
             yield p, h
     else:
-        hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+        hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
         for p, h in hash_seq_list:
             yield p, h
 
@@ -163,7 +166,7 @@ def spaced_kmers(seq: str, k_size: int, span_size: int, positions: set,
 
     if w > 1:
         hash_seq_list = [
-            (i, hash("".join([seq[i + j] for j in range(span_size) if j in positions])))
+            (i, canonical_hash("".join([seq[i + j] for j in range(span_size) if j in positions])))
             for i in range(len(seq) - span_size + 1)
         ]
         # produce a subset of positions, still with samme index as in full sequence
@@ -171,7 +174,7 @@ def spaced_kmers(seq: str, k_size: int, span_size: int, positions: set,
         spaced_kmers_pos = {i: h for i, h in hash_seq_list_thinned}
     else:
         spaced_kmers_pos = {
-            i: hash("".join([seq[i + j] for j in range(span_size) if j in positions]))
+            i: canonical_hash("".join([seq[i + j] for j in range(span_size) if j in positions]))
             for i in range(len(seq) - span_size + 1)
         }
     # print(positions, len(positions), span_size)
@@ -194,7 +197,7 @@ def spaced_kmers_iter(seq: str, k_size: int, span_size: int,
     # print(positions, len(positions), span_size)
     # well, this is not the most time efficient way to sample spaced kmers but works for simulations...
     for i in range(len(seq) - span_size + 1):
-        yield hash("".join([seq[i + j] for j in range(span_size) if j in positions]))
+        yield canonical_hash("".join([seq[i + j] for j in range(span_size) if j in positions]))
 
 
 def seq_to_randstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
@@ -212,7 +215,7 @@ def seq_to_randstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
     :param order: number of substrings/strobes
     :returns: an iterator for creating randstrobes
     """
-    hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+    hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
     # thinning
     if w > 1:
         # produce a subset of positions, still with same index as in full sequence
@@ -333,8 +336,7 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
     :param order: number of substrings/strobes
     :returns: an iterator for creating multi context seeds
     """
-    hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
-    # hash_seq_list = [(i, min(hash(seq[i:i + k_size]), hash())) for i in range(len(seq) - k_size + 1)]
+    hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
     # thinning
     if w > 1:
         # produce a subset of positions, still with same index as in full sequence
@@ -371,7 +373,6 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
         min_hash_val = hash_m1
         partial_hash_val = hash_m1
         raw_hash_values = [hash_m1 % ((MAX + 1) * 2)]
-        hash_values = [hash_m1]
         for index_order in range(1, order):
             min_index, min_value = argmin([
                 (min_hash_val + hash_seq_list[i][1]) % prime
@@ -384,6 +385,8 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
             raw_hash_values.append(hash_seq_list[windows[index_order-1][0] + min_index][1] % ((MAX + 1) * 2))
             # hash_values.append(min_hash_val)
 
+        if raw_hash_values[-1] < raw_hash_values[0]:
+            raw_hash_values.reverse()
         main_hash_len = 40
         aux_hash_len = 64 - main_hash_len
         digest_len = (64 - main_hash_len) // (order - 1)
@@ -445,7 +448,7 @@ def seq_to_mixedrandstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int
     :param numerator: denominator and numerator determine the fraction of sampled strobemers
     :returns: an iterator for creating mixedrandstrobes
     """
-    hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+    hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
     # thinning
     if w > 1:
         # produce a subset of positions, still with samme index as in full sequence
@@ -492,7 +495,7 @@ def seq_to_mixedrandstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int
 
         else:  # pick k-mer
             index = tuple(p1 + (strobe_num) * k_size for strobe_num in range(order))
-            yield index, hash(seq[p1: p1+k_size*order])
+            yield index, canonical_hash(seq[p1: p1+k_size*order])
 
 
 def mixedrandstrobes(seq: str, k_size: int, strobe_w_min_offset: int,
@@ -569,7 +572,7 @@ def seq_to_minstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
     :param order: number of substrings/strobes
     :returns: an iterator for creating minstrobes
     """
-    hash_seq_list = [(i, hash(seq[i: i+k_size])) for i in range(len(seq) - k_size + 1)]
+    hash_seq_list = [(i, canonical_hash(seq[i: i+k_size])) for i in range(len(seq) - k_size + 1)]
 
     # produce a subset of positions, still with samme index as in full sequence
     strobes = deque(thinner([h for i, h in hash_seq_list], strobe_w_max_offset - strobe_w_min_offset))
@@ -671,7 +674,7 @@ def seq_to_mixedminstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
     :param numerator: denominator and numerator determine the fraction of sampled strobemers
     :returns: a tuple with positions as first element and hash_value as second element.
     """
-    hash_seq_list = [(i, hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
+    hash_seq_list = [(i, canonical_hash(seq[i:i+k_size])) for i in range(len(seq) - k_size + 1)]
     # produce a subset of positions, still with samme index as in full sequence
     strobes = deque(thinner([h for i, h in hash_seq_list], strobe_w_max_offset - strobe_w_min_offset))
     strobes_dict = {strobe_num: copy.deepcopy(strobes) for strobe_num in range(1, order)}
@@ -701,7 +704,7 @@ def seq_to_mixedminstrobes_iter(seq: str, k_size: int, strobe_w_min_offset: int,
 
         else:  # pick k-mer
             index = tuple(p1 + (strobe_num) * k_size for strobe_num in range(order))
-            yield index, hash(seq[p1:p1+k_size*order])
+            yield index, canonical_hash(seq[p1:p1+k_size*order])
 
 
 def mixedminstrobes(seq: str, k_size: int, strobe_w_min_offset: int,
@@ -806,7 +809,7 @@ def seq_to_hybridstrobes_iter(seq: str, k_size: int, w_min, w_max, w: int,
     :param order: number of substrings/strobes
     :returns: an iterator for creating hybridstrobes
     """
-    hash_list = [hash(seq[i:i+k_size]) for i in range(len(seq) - k_size + 1)]
+    hash_list = [canonical_hash(seq[i:i+k_size]) for i in range(len(seq) - k_size + 1)]
     n_partition = 3
     w_p = (w_max - w_min) // n_partition
 
@@ -947,7 +950,7 @@ def seq_to_mixedhybridstrobes_iter(seq: str, k_size: int, w_min: int, w_max: int
     :param numerator: denominator and numerator determine the fraction of sampled strobemers
     :returns: an iterator for creating mixedhybridstrobes
     """
-    hash_list = [hash(seq[i:i+k_size]) for i in range(len(seq) - k_size + 1)]
+    hash_list = [canonical_hash(seq[i:i+k_size]) for i in range(len(seq) - k_size + 1)]
     n_partition = 3
     w_p = (w_max - w_min) // n_partition
 
@@ -1001,7 +1004,7 @@ def seq_to_mixedhybridstrobes_iter(seq: str, k_size: int, w_min: int, w_max: int
         # decide whether kmers should be sampled instead of mixedstrobes
         if hash_list[i] % denominator >= numerator:
             positions = [i + strobe * k_size for strobe in range(order)]
-            index_hash = hash(seq[i:i+k_size * order])
+            index_hash = canonical_hash(seq[i:i+k_size * order])
 
         yield positions, index_hash
 

@@ -406,7 +406,8 @@ def plot_island_distribution2(results, mut_freq, k_size, outfolder):
     data.write("label\tdp\tmut_freq\n")
 
     for label in results:
-        non_strobemer_protocols = {"kmers & {}".format(k_size), "kmers & {}".format(k_size // 2),
+        non_strobemer_protocols = {"kmers & {}".format(k_size), "kmers & {}".format(k_size // 3),
+                                   "kmers & {}".format(k_size // 2),
                                    "kmers & {}".format(k_size * 2 // 3), "spaced kmers & sparse",
                                    "spaced kmers & dense"}
         if label in non_strobemer_protocols:
@@ -571,9 +572,10 @@ def print_combined_table(combined_results, mut_freqs, metrics_list, protocols):
 
 def main(args):
     L = 10000
-    # L = 10000
+    # L = 500
     k_size = 30
-    nr_exp = 100
+    nr_exp = 1000
+    # nr_exp = 1000
     w = 1 # thinning, w = 1  means no thinning. w =1, 10, 20 was used in the evaluations.
     mut_freqs = [0.01, 0.05, 0.1] #[0.1]
     # mut_freqs = [0.1]
@@ -594,15 +596,16 @@ def main(args):
 
     for mut_freq in mut_freqs:
         print("MUTATION RATE:", mut_freq)
-        results = {"kmers & {}".format(k_size) : {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0},
+        results = {"kmers & {}".format(k_size) : {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc" :0},
+                   "kmers & {}".format(k_size // 3): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc": 0},
+                   "kmers & {}".format(k_size // 2): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc": 0},
+                   "kmers & {}".format(k_size * 2 // 3): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc": 0},
                     "spaced kmers & dense" : {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0},
                     "spaced kmers & sparse" : {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0},
                     "minstrobes" : { (2,15,w_2low,w_2high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0 },
                                      (3,10,w_3low,w_3high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0} },
                     "randstrobes" : { (2,15,w_2low,w_2high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0},
                                       (3,10,w_3low,w_3high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0} },
-                    "kmers & {}".format(k_size // 2): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc": 0},
-                    "kmers & {}".format(k_size * 2 // 3): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc": 0},
                     "multi-context" : { (2,15,w_2low,w_2high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0},
                                         (3,10,w_3low,w_3high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0} },
                     "hybridstrobes" : { (2,15,w_2low,w_2high): {"m": 0, "mp": 0, "sc": 0, "gaps": [], "mc":0 },
@@ -641,6 +644,14 @@ def main(args):
             # print("kmers", match_coverage)
             # print_matches(all_pos_vector, "kmers")
 
+            m, mp, sc, gaps, all_pos_vector, match_coverage = analyze_kmers(seq1, seq2, k_size // 3, w)
+            results["kmers & {}".format(k_size // 3)]["m"] += m
+            results["kmers & {}".format(k_size // 3)]["sc"] += sc
+            results["kmers & {}".format(k_size // 3)]["gaps"].append(gaps)
+            results["kmers & {}".format(k_size // 3)]["mc"] += match_coverage
+            results["kmers & {}".format(k_size // 3)]["mp"] += mp
+            # print("kmers", match_coverage)
+            # print_matches(all_pos_vector, "kmers")
 
             m, mp, sc, gaps, all_pos_vector, match_coverage = analyze_kmers(seq1, seq2, k_size // 2, w)
             results["kmers & {}".format(k_size // 2)]["m"] += m
@@ -790,7 +801,7 @@ def main(args):
 
         combined_results[mut_freq] = {}
         for protocol in results:
-            non_strobemer_protocols = {"kmers & {}".format(k_size), "kmers & {}".format(k_size // 2), "kmers & {}".format(k_size * 2 // 3), "spaced kmers & sparse", "spaced kmers & dense"}
+            non_strobemer_protocols = {"kmers & {}".format(k_size), "kmers & {}".format(k_size // 3), "kmers & {}".format(k_size // 2), "kmers & {}".format(k_size * 2 // 3), "spaced kmers & sparse", "spaced kmers & dense"}
             if protocol in non_strobemer_protocols:
                 flat = [g for l in results[protocol]["gaps"] for g in l]
                 if flat:
