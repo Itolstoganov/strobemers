@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os,sys
 import argparse
 
@@ -309,7 +311,16 @@ def analyze_strobemers(seq1, seq2, k_size, order, hash_fcn, w, w_low = 0, w_high
     m = len(full_matches)
     mp = len(strobemers1.values())
     if hash_fcn == "multi-context":
+        # print("mcs params", k_size // order, order)
+        # print(strobemers1)
+        partial_hashes1 = set([value[0] for value in strobemers1.values()])
+        partial_hashes2 = set([value[0] for value in strobemers2.values()])
+        # print("{} partial hashes in str1, {} partial hashes in str2".format(len(partial_hashes1), len(partial_hashes2)))
+        # print("Partial hash intersection: {}".format(len(partial_hashes1 & partial_hashes2)))
         full_matches, partial_matches, m = get_multi_context_matches(strobemers1.values(), strobemers2.values(), order)
+        # print("{} partial mcs matches".format(len(partial_matches[0])))
+        # print("{} full mcs matches".format(len(full_matches)))
+        # print(m, mp)
     ivls, all_pos_vector = get_intervals(strobemers1, full_matches, order, partial_matches)
     nr_islands, gap_lengths, c = statistics(ivls, seq1, k_size//order)
     seq_cov = get_sequence_coverage(strobemers1, full_matches, order, k_size//order, partial_matches)
@@ -327,8 +338,6 @@ def analyze_kmers(seq1, seq2, k_size, w):
     #kmers
     kmers_pos1 = indexing_Maier.kmers(seq1, k_size, w)
     kmers_pos2 = indexing_Maier.kmers(seq2, k_size, w)
-    # print("kmers", 1, len(kmers_pos1))
-    # print("kmers:",  len(kmers_pos2))
     # kmers_pos1 = {p : seq1[i:i+k_size] for p, i in enumerate(range(len(seq1) - k_size +1))}
     # kmers_seq1 = set([seq1[i:i+k_size] for i in range(len(seq1) - k_size +1)])
     # kmers_seq2 = set([seq2[i:i+k_size] for i in range(len(seq2) - k_size +1)])
@@ -521,8 +530,8 @@ def get_e_size(all_islands, L, nr_exp):
     sum_of_squares = sum([x**2 for x in all_islands])
     return sum_of_squares/(L*nr_exp)
 
-def print_combined_table(combined_results, mut_freqs, metrics_list, protocols):
-    num_metrics = None
+def print_combined_table(combined_results, mut_freqs, metrics_list, protocols, outfile):
+    skipped_protocols = ["hybrid", "spaced", "min"]
     num_protocols = None
     num_freqs = len(combined_results)
     protocol_to_results = {}
@@ -534,10 +543,7 @@ def print_combined_table(combined_results, mut_freqs, metrics_list, protocols):
             assert(num_protocols == len(results))
         protocols = results.keys()
         for protocol, protocol_results in results.items():
-            if not num_metrics:
-                num_metrics = len(protocol_results)
-            else:
-                assert(num_metrics == len(protocol_results))
+            assert(len(metrics_list) == len(protocol_results))
             if protocol not in protocol_to_results:
                 protocol_to_results[protocol] = {}
             protocol_to_results[protocol][mut_freq] = protocol_results
@@ -545,8 +551,9 @@ def print_combined_table(combined_results, mut_freqs, metrics_list, protocols):
     dataset_name = "SIM-R"
     table_string = ""
     table_string += "\\begin{table}[]\n"
+    num_metrics = len(metrics_list)
     num_columns = num_freqs * num_metrics + 2
-    column_string = "{" + "".join(["l" for _ in range(num_columns)]) + "}"
+    column_string = "{ll@{\hskip 0.1in}" + "|".join(["c" for _ in range(num_freqs * num_metrics)]) + "|}"
     table_string += "\\begin{tabular}" + column_string + "\n"
     table_string += " &  & " + "\\multicolumn{{{}}}{{c}}{{{}}}".format(num_freqs * num_metrics, dataset_name) + "\\\\ \\cline{{{}-{}}}\n".format(3, num_columns)
     table_string += " &  "
@@ -559,15 +566,74 @@ def print_combined_table(combined_results, mut_freqs, metrics_list, protocols):
         table_string += " & ".join(metrics_list)
     table_string += " \\\\ \\hline\n"
     # Generate result
-    print(protocols)
     for protocol, protocol_results in protocol_to_results.items():
+        skip = False
+        for skipped in skipped_protocols:
+            if protocol.startswith(skipped):
+                skip = True
+        if skip:
+            continue
         table_string += protocol + " & "
-        print(protocol_results[0.01])
+        # print(protocol_results[0.01])
         mut_freq_results = [" & ".join([str(round(r, 1)) for r in protocol_results[mut_freq]]) for mut_freq in mut_freqs]
         table_string += " & ".join(mut_freq_results)
         table_string += " \\\\\n"
+    table_string += "\\hline\n"
+    table_string += "\\end{tabular}\n"
+    table_string += "\\end{table}\n"
 
-    print(table_string)
+    with open(outfile, "w") as outhandle:
+        outhandle.write(table_string)
+
+    print("Combined results table in {}".format(outfile))
+
+
+def get_combined_results(mut_freq, results, k_size, L, nr_exp, metrics):
+    combined_results = {}
+    protocols = []
+
+    for protocol in results:
+        non_strobemer_protocols = {"kmers & {}".format(k_size), "kmers & {}".format(k_size // 3), "kmers & {}".format(k_size // 2), "kmers & {}".format(k_size * 2 // 3), "spaced kmers & sparse", "spaced kmers & dense"}
+        res = []
+        if protocol in non_strobemer_protocols:
+            flat = [g for l in results[protocol]["gaps"] for g in l]
+            if flat:
+                # avg_island_len = sum(flat)/len(flat)
+                # print(protocol)
+                e_size = get_e_size(flat, L, nr_exp)
+            # else:
+            #     avg_island_len = 0
+            res = []
+            metric_to_res = {}
+            metric_to_res["m"] = round(100*results[protocol]["m"]/results[protocol]["mp"], 1)
+            metric_to_res["sc"] = 100*results[protocol]["sc"]/(L*nr_exp)
+            metric_to_res["mc"] = 100*results[protocol]["mc"]/(L*nr_exp)
+            metric_to_res["E-size"] = e_size
+            for metric in metrics:
+                res.append(metric_to_res[metric])
+            combined_results[protocol] = res
+            # print(protocol, " & ".join([ str(round(r, 1)) for r in res]) )
+        else:
+            for params in results[protocol]:
+                flat = [g for l in results[protocol][params]["gaps"] for g in l]
+                if flat:
+                    # avg_island_len = sum(flat)/len(flat)
+                    # print(protocol, params)
+                    e_size = get_e_size(flat, L, nr_exp)
+                # else:
+                    # avg_island_len = 0
+                res = []
+                metric_to_res = {}
+                metric_to_res["m"] = round(100*results[protocol][params]["m"]/results[protocol][params]["mp"], 1)
+                metric_to_res["sc"] = 100*results[protocol][params]["sc"]/(L*nr_exp)
+                metric_to_res["mc"] = 100*results[protocol][params]["mc"]/(L*nr_exp)
+                metric_to_res["E-size"] = e_size
+                for metric in metrics:
+                    res.append(metric_to_res[metric])
+                combined_results[str(protocol) + " & " + str(params)] = res
+                # print(protocol, params, " & ".join([ str(round(r, 1)) for r in res]) )
+    protocols = results.keys()
+    return protocols, combined_results
 
 
 def main(args):
@@ -575,7 +641,6 @@ def main(args):
     # L = 500
     k_size = 30
     nr_exp = 1000
-    # nr_exp = 1000
     w = 1 # thinning, w = 1  means no thinning. w =1, 10, 20 was used in the evaluations.
     mut_freqs = [0.01, 0.05, 0.1] #[0.1]
     # mut_freqs = [0.1]
@@ -591,8 +656,11 @@ def main(args):
     # mut_freq = 0.5 #0.01 #, 0.05, 0.1]
     list_for_illustration = [[],[],[],[],[],[],[],[]]
 
-    combined_results = {}
-    protocols = []
+    full_metrics_list = ["m", "mc", "sc", "E-size"]
+    short_metrics_list = ["m", "sc", "E-size"]
+
+    full_combined_results = {}
+    short_combined_results = {}
 
     for mut_freq in mut_freqs:
         print("MUTATION RATE:", mut_freq)
@@ -793,42 +861,20 @@ def main(args):
             # # print(gaps)
 
 
-            # print(len(list_for_illustration))
+            # print(len(list_for_illustration))  
 
         # plot_matches(list_for_illustration, "m", L, k_size, args.outfolder)
 
         plot_island_distribution2(results, mut_freq, k_size, args.outfolder)
-
-        combined_results[mut_freq] = {}
-        for protocol in results:
-            non_strobemer_protocols = {"kmers & {}".format(k_size), "kmers & {}".format(k_size // 3), "kmers & {}".format(k_size // 2), "kmers & {}".format(k_size * 2 // 3), "spaced kmers & sparse", "spaced kmers & dense"}
-            if protocol in non_strobemer_protocols:
-                flat = [g for l in results[protocol]["gaps"] for g in l]
-                if flat:
-                    # avg_island_len = sum(flat)/len(flat)
-                    # print(protocol)
-                    e_size = get_e_size(flat, L, nr_exp)
-                # else:
-                #     avg_island_len = 0
-                res = [round(100*results[protocol]["m"]/results[protocol]["mp"], 1), 100*results[protocol]["sc"]/(L*nr_exp), 100*results[protocol]["mc"]/(L*nr_exp), e_size]
-                combined_results[mut_freq][protocol] = res
-                print(protocol, " & ".join([ str(round(r, 1)) for r in res]) )
-            else:
-                for params in results[protocol]:
-                    flat = [g for l in results[protocol][params]["gaps"] for g in l]
-                    if flat:
-                        # avg_island_len = sum(flat)/len(flat)
-                        # print(protocol, params)
-                        e_size = get_e_size(flat, L, nr_exp)
-                    # else:
-                        # avg_island_len = 0
-                    res = [round(100*results[protocol][params]["m"]/results[protocol][params]["mp"], 1), 100*results[protocol][params]["sc"]/(L*nr_exp), 100*results[protocol][params]["mc"]/(L*nr_exp), e_size]
-                    combined_results[mut_freq][str(protocol) + " & " + str(params)] = res
-                    print(protocol, params, " & ".join([ str(round(r, 1)) for r in res]) )
-        protocols = results.keys()
-
-    metrics_list = ["m", "sc", "mc", "E"]
-    print_combined_table(combined_results, mut_freqs, metrics_list, protocols)
+        protocols, short_mf_results = get_combined_results(mut_freq, results, k_size, L, nr_exp, short_metrics_list)
+        short_combined_results[mut_freq] = short_mf_results
+        protocols, full_mf_results = get_combined_results(mut_freq, results, k_size, L, nr_exp, full_metrics_list)
+        full_combined_results[mut_freq] = full_mf_results
+    
+    print_combined_table(short_combined_results, mut_freqs, short_metrics_list, protocols, 
+                         os.path.join(args.outfolder, "short_results.tex"))
+    print_combined_table(full_combined_results, mut_freqs, full_metrics_list, protocols, 
+                         os.path.join(args.outfolder, "full_results.tex"))
 
     # print(results)
 

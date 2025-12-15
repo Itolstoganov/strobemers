@@ -371,7 +371,6 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
         index = [p1, ]
         min_values = []
         min_hash_val = hash_m1
-        partial_hash_val = hash_m1
         raw_hash_values = [hash_m1 % ((MAX + 1) * 2)]
         for index_order in range(1, order):
             min_index, min_value = argmin([
@@ -385,8 +384,6 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
             raw_hash_values.append(hash_seq_list[windows[index_order-1][0] + min_index][1] % ((MAX + 1) * 2))
             # hash_values.append(min_hash_val)
 
-        if raw_hash_values[-1] < raw_hash_values[0]:
-            raw_hash_values.reverse()
         main_hash_len = 40
         aux_hash_len = 64 - main_hash_len
         digest_len = (64 - main_hash_len) // (order - 1)
@@ -402,6 +399,7 @@ def seq_to_multi_context_iter(seq: str, k_size: int, strobe_w_min_offset: int,
             # print("{:064b}".format(digest))
             # print("{:064b}".format(hash_values[-1]))
             assert(hash_values[-1] >> (64 - curr_prefix_len) == curr_hash_prefix >> (64 - curr_prefix_len))
+        # print(hash_values)
 
         yield index, tuple(hash_values)
 
